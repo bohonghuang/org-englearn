@@ -2,6 +2,7 @@
 
 (require 'hydra)
 (require 'go-translate)
+(require 'org-capture)
 
 (defvar gts-kill-ring-only-translation-render-source-text nil
   "")
@@ -33,7 +34,7 @@
       (atomic-change-group
         (let* ((sentence-begin (region-beginning))
                (sentence-end (region-end))
-               (last-mark -1)
+               last-mark
                (first-loop t))
           (goto-char sentence-begin)
           (while (progn
@@ -61,8 +62,10 @@
                          (org-back-to-heading)
                          (end-of-line)
                          (insert insertion)
-                         (cl-incf sentence-begin (length insertion))
-                         (cl-incf sentence-end (length insertion))))
+                         (let ((inc (length insertion)))
+                         (cl-incf sentence-begin inc)
+                         (cl-incf sentence-end inc)
+                         (cl-incf last-mark inc))))
                      (ignore-errors
                        (forward-sexp)
                        (backward-sexp))
@@ -95,8 +98,12 @@
         (org-capture-string sentence "e")
         (search-forward cap)
         (set-mark (- (point) (length cap)))
-        (org-englearn-fill-heading)
         (setq gts-kill-ring-only-translation-render-source-text sentence)
-        (gts-translate org-englearn-gts-translator sentence "en" "zh")))))
+        (gts-translate org-englearn-gts-translator sentence "en" "zh")
+        (activate-mark)
+        (org-englearn-fill-heading)
+        (end-of-buffer)
+        (indent-for-tab-command)
+        (yank)))))
 
 (provide 'org-englearn)
