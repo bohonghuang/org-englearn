@@ -18,11 +18,12 @@
 
 (cl-defmethod gts-out ((_ gts-kill-ring-only-translation-render) task)
   (deactivate-mark)
-  (with-slots (result ecode) task
-    (unless ecode
-      (kill-new (org-englearn-trim-string (replace-regexp-in-string (regexp-quote gts-kill-ring-only-translation-render-source-text) "" result))))
-    (setq gts-kill-ring-only-translation-render-source-text nil)
-    (message "Translation has saved to kill ring.")))
+  (with-slots (err parsed) task
+    (if err
+        (user-error "%s" err)
+      (kill-new (org-englearn-trim-string (replace-regexp-in-string (regexp-quote gts-kill-ring-only-translation-render-source-text) "" parsed)))
+      (setq gts-kill-ring-only-translation-render-source-text nil)
+      (message "Translation has saved to kill ring."))))
 
 (defvar org-englearn-gts-translator
   (gts-translator
@@ -110,7 +111,7 @@
   (set-mark (- (point) (length text)))
   (setq context (replace-regexp-in-string "\n" " " context))
   (setq gts-kill-ring-only-translation-render-source-text context)
-  (gts-translate org-englearn-gts-translator context  "en" "zh")
+  (gts-translate org-englearn-gts-translator context '("en" . "zh"))
   (activate-mark)
   (org-englearn-fill-heading)
   (org-englearn-move-capture-timestamp)
