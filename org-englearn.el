@@ -3,34 +3,27 @@
 ;; Commentary:
 ;; This package provides an efficient English learning workflow, combining with org-mode, org-capture, org-roam.
 
+(require 'cl-lib)
 (require 'hydra)
 (require 'go-translate)
+(require 'org)
 (require 'org-capture)
+(require 'org-roam)
 
-(defvar gts-kill-ring-only-translation-render-source-text nil
-  "")
+(defcustom org-englearn-file-meanings (expand-file-name "org-roam/english-learning/meanings.org" org-directory)
+  "Path to the file for English meanings.")
 
+(defcustom org-englearn-file-inbox (expand-file-name "org-capture/english.org" org-directory)
+  "Path to the file as a inbox of English vocabulary and difficult sentences.")
+
+(defcustom org-englearn-file-words (expand-file-name "org-roam/english-learning/words.org" org-directory)
+  "Path to the file for English words or phrases.")
+
+(defcustom org-englearn-translation-engines (make-instance 'gt-youdao-dict-engine)
+  "The translation engines used by `go-translate'.")
 
 (defun org-englearn-trim-string (string)
   (replace-regexp-in-string "\\(^[[:space:]\n]*\\|[[:space:]\n]*$\\)" "" string))
-
-(defclass gts-kill-ring-only-translation-render (gts-render) ())
-
-(cl-defmethod gts-out ((_ gts-kill-ring-only-translation-render) task)
-  (deactivate-mark)
-  (with-slots (err parsed) task
-    (if err
-        (user-error "%s" err)
-      (kill-new (org-englearn-trim-string (replace-regexp-in-string (regexp-quote gts-kill-ring-only-translation-render-source-text) "" parsed)))
-      (setq gts-kill-ring-only-translation-render-source-text nil)
-      (message "Translation has saved to kill ring."))))
-
-(defvar org-englearn-gts-translator
-  (gts-translator
-       :picker (gts-prompt-picker)
-       :engines (list (gts-google-engine))
-       :render (gts-kill-ring-only-translation-render))
-  "")
 
 (defun org-englearn-fill-heading ()
   (if (region-active-p)
@@ -45,29 +38,32 @@
                      (set-mark (setq last-mark (point)))
                      (forward-sexp)
                      (let* ((phrase (buffer-substring-no-properties (region-beginning) (region-end)))
-                            (element (pcase (car (read-multiple-choice "What's the form of this word in heading?"
-                                                                  `((?s "n.(sth./sb./sp.)")
-                                                                    (?n "n.(noun)")
-                                                                    (?v "v.(verb)")
-                                                                    (?p "prep.")
-                                                                    (?k ,phrase)
-                                                                    (?. "...")
-                                                                    (?  "(empty)"))))
-                                       (`?s (pcase (car (read-multiple-choice "Some?"
-                                                                         '((?t "sth.")
-                                                                           (?p "sp.")
-                                                                           (?b "sb."))))
-                                              (`?t "=sth.=")
-                                              (`?p "=sp.=")
-                                              (`?b "=sb.=")
-                                              (x (error "Unknown element of s%s!" x))))
-                                       (`?n "=n.=")
-                                       (`?v "=v.=")
-                                       (`?p "=prep.=")
-                                       (`?k phrase)
-                                       (`?. "=...=")
-                                       (`?  "")
-                                       (x (error "Unknown element of %s!" x))))
+                            (element (cl-ecase (car (read-multiple-choice
+                                                     "What's the form of this word in heading?"
+                                                     `((?s "n.(sth./sb./sp.)")
+                                                       (?n "n.(noun)")
+                                                       (?v "v.(verb)")
+                                                       (?p "prep.")
+                                                       (?k ,phrase)
+                                                       (?. "...")
+                                                       (?  "(empty)"))))
+                                       (?s (cl-ecase (car (read-multiple-choice "Some?"
+                                                                                '((?t "sth.")
+                                                                                  (?p "sp.")
+                                                                                  (?b "sb.")
+                                                                                  (?o "one's")
+                                                                                  (?s "oneself"))))
+                                             (?t "=sth.=")
+                                             (?p "=sp.=")
+                                             (?b "=sb.=")
+                                             (?o "=one's=")
+                                             (?s "=oneself=")))
+                                       (?n "=n.=")
+                                       (?v "=v.=")
+                                       (?p "=prep.=")
+                                       (?k phrase)
+                                       (?. "=...=")
+                                       (?  "")))
                             (insertion (concat (if (or (string-empty-p element) first-loop)
                                                    "" " ")
                                                element)))
@@ -76,9 +72,9 @@
                          (end-of-line)
                          (insert insertion)
                          (let ((inc (length insertion)))
-                         (cl-incf sentence-begin inc)
-                         (cl-incf sentence-end inc)
-                         (cl-incf last-mark inc))))
+                           (cl-incf sentence-begin inc)
+                           (cl-incf sentence-end inc)
+                           (cl-incf last-mark inc))))
                      (ignore-errors
                        (forward-sexp)
                        (backward-sexp))
@@ -92,58 +88,73 @@
     (error "No mark set!")))
 
 (defun org-englearn-move-capture-timestamp ()
-  (interactive)
   (org-back-to-heading)
-  (next-line)
+  (forward-line)
   (let ((beg (point))
         timestamp)
-          (end-of-line)
-          (setq timestamp (buffer-substring-no-properties beg (point)))
-          (delete-region beg (point))
-          (delete-forward-char 1)
-          (end-of-buffer)
-          (previous-line)
-          (end-of-line)
-          (insert " " timestamp)))
+    (end-of-line)
+    (setq timestamp (buffer-substring-no-properties beg (point)))
+    (delete-region beg (point))
+    (delete-char 1)
+    (goto-char (point-max))
+    (forward-line -1)
+    (end-of-line)
+    (insert " " timestamp)))
+
+(defun org-englearn-remove-redundant-delimiters-in-string (string)
+  (replace-regexp-in-string "[[:space:]\n]+" " " string))
+
+(defun org-englearn-translate-to-kill-ring (text)
+  (gt-start
+   (make-instance
+    'gt-translator
+    :taker (make-instance
+            'gt-taker
+            :text (org-englearn-remove-redundant-delimiters-in-string text)
+            :langs '(en zh))
+    :engines org-englearn-translation-engines
+    :render (make-instance 'gt-kill-ring-render))))
+
+;;;###autoload
+(defun org-englearn-org-roam-node-insert ()
+  (interactive)
+  (setq-local org-roam-capture-templates `(("m" "Meaning"
+                                            entry "* ${title}" :if-new (file ,org-englearn-file-meanings) :unnarrowed t :immediate-finish t)))
+  (add-hook 'org-capture-after-finalize-hook #'org-englearn-capture-heading-by-id-hook -5 t)
+  (unwind-protect (org-roam-node-insert)
+    (remove-hook 'org-capture-after-finalize-hook #'org-englearn-capture-heading-by-id-hook t)
+    (kill-local-variable 'org-roam-capture-templates)))
 
 (defun org-englearn-capture-process-buffer (text context)
   (search-forward text)
   (set-mark (- (point) (length text)))
-  (setq context (replace-regexp-in-string "\n" " " context))
-  (setq gts-kill-ring-only-translation-render-source-text context)
-  (gts-translate org-englearn-gts-translator context '("en" . "zh"))
+  (org-englearn-translate-to-kill-ring context)
   (activate-mark)
   (org-englearn-fill-heading)
   (org-englearn-move-capture-timestamp)
-  (end-of-buffer)
-  (previous-line 2)
+  (goto-char (point-max))
+  (forward-line -2)
   (end-of-line)
   (insert " \\\\")
-  (next-line)
+  (forward-line)
   (beginning-of-line)
   (open-line 1)
   (indent-for-tab-command)
   (yank)
   (org-back-to-heading)
-  (next-line 1)
+  (forward-line 1)
   (indent-for-tab-command)
   (insert "- ")
   (let ((beg (point)))
-    (next-line)
+    (forward-line)
     (beginning-of-line)
-    (delete-forward-char 1)
+    (delete-char 1)
     (insert "-")
     (org-indent-item)
     (goto-char beg)
-    (setq-local org-roam-capture-templates `(("m" "Meaning"
-                                              entry "* ${title}" :if-new (file ,(expand-file-name "org-roam/english-learning/meanings.org" org-directory)) :unnarrowed t :immediate-finish t)))
-    (add-hook 'org-capture-after-finalize-hook #'org-englearn-capture-heading-by-id-hook -5 t)
-    (org-roam-node-insert)
-    (kill-local-variable 'org-roam-capture-templates)
-    (remove-hook 'org-capture-after-finalize-hook #'org-englearn-capture-heading-by-id-hook t)
+    (org-englearn-org-roam-node-insert)
     (beginning-of-line)
     (re-search-forward "^[[:space:]]*- ")
-    
     (pcase (completing-read "What's its part?" '("adj." "adv." "n." "v." "vt." "vi." "prep.")
                             nil nil nil nil nil)
       (`"adv." (insert "adv. ")
@@ -154,6 +165,7 @@
        (insert "的"))
       (x (insert x " ")))))
 
+;;;###autoload
 (defun org-englearn-capture-process-region (&optional beg end)
   (interactive)
   (let* ((beg (or beg (if (region-active-p) (region-beginning) (mark))))
@@ -177,14 +189,19 @@
               (ins-link (eq (plist-get roam-list :finalize) 'insert-link)))
     (with-current-buffer (org-capture-get :buffer)
       (goto-char (point-min))
-      (re-search-forward (concat "^* " (plist-get roam-list :link-description) ))
+      (re-search-forward (concat "^* " (plist-get roam-list :link-description)))
       (org-roam-capture--put :id (org-id-get-create)))))
 
+(cl-pushnew
+ `("e" "English Vocabulary" entry (file ,org-englearn-file-inbox) "* %?\n%U\n\n  %i\n  %a" :kill-buffer t)
+ org-capture-templates :test #'string= :key #'car)
+
+;;;###autoload
 (defun org-englearn-capture (&optional beg end)
   (interactive)
   (let* ((beg (or beg (if (region-active-p) (region-beginning) (mark))))
          (end (or end (if (region-active-p) (region-end) (point))))
-         (cap (buffer-substring-no-properties beg end)))
+         (cap (org-englearn-remove-redundant-delimiters-in-string (buffer-substring-no-properties beg end))))
     (if (string-match-p (regexp-quote ".") cap)
         (org-capture-string cap "e")
       (let* ((beg (save-excursion
@@ -195,35 +212,33 @@
                     (unless (< (point) (mark)) (exchange-point-and-mark))
                     (forward-sentence)
                     (point)))
-             (sentence (buffer-substring-no-properties beg end)))
+             (sentence (org-englearn-remove-redundant-delimiters-in-string (buffer-substring-no-properties beg end))))
         (deactivate-mark)
         (org-capture-string sentence "e")
         (org-englearn-capture-process-buffer cap sentence)))))
 
+;;;###autoload
 (defun org-englearn-process-inbox ()
   (interactive)
-  (find-file (expand-file-name "org-capture/english.org" org-directory))
+  (find-file org-englearn-file-inbox)
   (org-map-entries
    (lambda ()
      (setq org-map-continue-from (org-element-property
                                   :begin
                                   (org-element-at-point)))
      (org-narrow-to-element)
-     (org-show-subtree)
-
-     (pcase (car (read-multiple-choice "Which category does it belong to?"
-                                       '((?w "words")
-                                         (?c "complex sentence"))))
-       (`?w (org-cut-subtree)
-            (with-current-buffer (find-file-noselect (expand-file-name "org-roam/english-learning/words.org" org-directory))
-              (end-of-buffer)
-              (yank)
-              (org-englearn-process-new-heading)))
-       (_ (error "Invalid input!")))
+     (org-fold-show-subtree)
+     (cl-ecase (car (read-multiple-choice "Which category does it belong to?"
+                                          '((?w "words")
+                                            (?c "complex sentence"))))
+       (?w (org-cut-subtree)
+           (with-current-buffer (find-file-noselect org-englearn-file-words) 
+             (goto-char (point-max))
+             (yank)
+             (org-englearn-process-new-heading))))
      (widen))))
 
 (defun org-englearn-process-new-heading ()
-  (interactive)
   (let ((words (org-map-entries (lambda () (nth 4 (org-heading-components)))))
         (word (nth 4 (org-heading-components)))
         item-title
@@ -235,7 +250,7 @@
                         (end-of-line)
                         (setq item-title (org-englearn-trim-string (buffer-substring-no-properties beg (point))))))
       (backward-char 2)
-      (er/expand-region 2)
+      (org-mark-element)
       (setq item (buffer-substring-no-properties (mark) (point)))
       (deactivate-mark)
       (org-cut-subtree)
@@ -251,7 +266,7 @@
                          (let ((insert-point (point)))
                            (insert item)
                            (goto-char insert-point)
-                           (next-line)
+                           (forward-line)
                            (beginning-of-line)
                            (delete-region insert-point (point))))
                      (error                                ; catch
