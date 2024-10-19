@@ -315,4 +315,22 @@
                (cl-assert (org-englearn--org-roam-node-equal-by-id destination (org-roam-node-at-point)))
                (mapc #'org-roam-alias-add aliases)))))
 
+;;;###autoload
+(defun org-englearn-org-roam-alias-add ()
+  (interactive)
+  (let* ((node (cond
+                ((and (eq major-mode 'org-mode) (org--link-at-point))
+                 (save-window-excursion
+                   (org-open-at-point)
+                   (org-roam-node-at-point)))
+                ((and (eq major-mode 'org-mode) (org-roam-node-at-point))
+                 (org-roam-node-at-point))
+                (t (org-roam-node-read))))
+         (alias (read-string (format "Alias to \"%s\": " (org-roam-node-title node)))))
+    (with-current-buffer (find-file-noselect (org-roam-node-file node))
+      (save-excursion
+        (goto-char (org-roam-node-point node))
+        (cl-assert (org-englearn--org-roam-node-equal-by-id node (org-roam-node-at-point)))
+        (org-roam-alias-add alias)))))
+
 (provide 'org-englearn)
