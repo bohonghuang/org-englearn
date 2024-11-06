@@ -4,6 +4,7 @@
 ;; This package provides an efficient English learning workflow, combining with org-mode, org-capture, org-roam.
 
 (require 'cl-lib)
+(require 'rx)
 (require 'hydra)
 (require 'go-translate)
 (require 'org)
@@ -154,7 +155,7 @@
     (goto-char beg)
     (org-englearn-org-roam-node-insert)
     (beginning-of-line)
-    (re-search-forward "^[[:space:]]*- ")
+    (re-search-forward (rx line-start (* space) "- "))
     (pcase (completing-read "What's its part?" '("adj." "adv." "n." "v." "vt." "vi." "prep.")
                             nil nil nil nil nil)
       (`"adv." (insert "adv. ")
@@ -189,7 +190,7 @@
               (ins-link (eq (plist-get roam-list :finalize) 'insert-link)))
     (with-current-buffer (org-capture-get :buffer)
       (goto-char (point-min))
-      (re-search-forward (concat "^* " (plist-get roam-list :link-description)))
+      (re-search-forward (rx line-start "* " (literal (plist-get roam-list :link-description)) (* space) line-end))
       (org-roam-capture--put :id (org-id-get-create)))))
 
 (cl-pushnew
@@ -202,7 +203,7 @@
   (let* ((beg (or beg (if (region-active-p) (region-beginning) (mark))))
          (end (or end (if (region-active-p) (region-end) (point))))
          (cap (org-englearn-remove-redundant-delimiters-in-string (buffer-substring-no-properties beg end))))
-    (if (string-match-p (regexp-quote ".") cap)
+    (if (string-match-p (rx ".") cap)
         (org-capture-string cap "e")
       (let* ((beg (save-excursion
                     (unless (> (point) (mark)) (exchange-point-and-mark))
@@ -245,7 +246,7 @@
         item)
     (when (cl-find word words :test #'string-equal-ignore-case)
       (org-back-to-heading)
-      (re-search-forward "^[[:space:]]*- ")
+      (re-search-forward (rx line-start (* space) "- "))
       (save-excursion (let ((beg (point)))
                         (end-of-line)
                         (setq item-title (org-englearn-trim-string (buffer-substring-no-properties beg (point))))))
@@ -255,12 +256,12 @@
       (deactivate-mark)
       (org-cut-subtree)
       (condition-case nil
-          (progn (re-search-backward (concat (regexp-quote (concat "* " word)) "[[:space:]]*$"))
+          (progn (re-search-backward (rx "* " (literal word) (* space) line-end))
                  (save-restriction
                    (org-narrow-to-subtree)
                    (condition-case nil
                        (progn                              ; try
-                         (re-search-forward (concat "^[[:space:]]*- " (regexp-quote item-title)))
+                         (re-search-forward (rx line-start (* space) "- " (literal item-title)))
                          (widen)
                          (org-end-of-item)
                          (let ((insert-point (point)))
@@ -270,7 +271,7 @@
                            (beginning-of-line)
                            (delete-region insert-point (point))))
                      (error                                ; catch
-                      (re-search-forward "^[[:space:]]*- ")
+                      (re-search-forward (rx line-start (* space) "- "))
                       (widen)
                       (org-end-of-item-list)
                       (insert item)))))
