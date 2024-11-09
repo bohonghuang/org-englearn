@@ -232,8 +232,13 @@
      (cl-ecase (car (read-multiple-choice "Which category does it belong to?"
                                           '((?w "words")
                                             (?c "complex sentence"))))
-       (?w (org-cut-subtree)
-           (with-current-buffer (find-file-noselect org-englearn-file-words) 
+       (?w (with-current-buffer
+               (prog1 (find-file-noselect
+                       (if-let* ((word (nth 4 (org-heading-components)))
+                                 (node (org-roam-node-from-title-or-alias word)))
+                           (org-roam-node-file node)
+                         org-englearn-file-words))
+                 (org-cut-subtree))
              (goto-char (point-max))
              (yank)
              (org-englearn-process-new-heading))))
@@ -247,9 +252,10 @@
     (when (cl-find word words :test #'string-equal-ignore-case)
       (org-back-to-heading)
       (re-search-forward (rx line-start (* space) "- "))
-      (save-excursion (let ((beg (point)))
-                        (end-of-line)
-                        (setq item-title (org-englearn-trim-string (buffer-substring-no-properties beg (point))))))
+      (save-excursion
+        (let ((beg (point)))
+          (end-of-line)
+          (setq item-title (org-englearn-trim-string (buffer-substring-no-properties beg (point))))))
       (backward-char 2)
       (org-mark-element)
       (setq item (buffer-substring-no-properties (mark) (point)))
@@ -282,6 +288,9 @@
 (defun org-englearn--org-roam-node-equal-by-id (a b)
   (string-equal (org-roam-node-id a) (org-roam-node-id b)))
 
+(defun org-englearn-org-roam--alias-add (alias)
+  (org-roam-property-add "ROAM_ALIASES" alias))
+
 ;;;###autoload
 (defun org-englearn-org-roam-node-merge (source destination)
   (interactive
@@ -299,22 +308,28 @@
                 (save-excursion
                   (goto-char point)
                   (cl-destructuring-bind (start . end) (org--bounds-of-link-at-point)
-                    (cl-assert (string= (org--link-at-point) source-link))
+                    (cl-assert (string-equal (org--link-at-point) source-link))
                     (replace-regexp-in-region (regexp-quote source-link) target-link start end)
                     (cl-destructuring-bind (newstart . newend) (org--bounds-of-link-at-point)
                       (cl-assert (= start newstart))
                       (cl-assert (= end newend))))))
            finally
-           (with-current-buffer (find-file-noselect (org-roam-node-file source))
-             (save-excursion
-               (goto-char (org-roam-node-point source))
-               (cl-assert (org-englearn--org-roam-node-equal-by-id source (org-roam-node-at-point)))
-               (org-cut-subtree)))
-           (with-current-buffer (find-file-noselect (org-roam-node-file destination))
-             (save-excursion
-               (goto-char (org-roam-node-point destination))
+           (let ((marker (with-current-buffer (find-file-noselect (org-roam-node-file destination))
+                           (save-excursion
+                             (goto-char (org-roam-node-point destination))
+                             (cl-assert (org-englearn--org-roam-node-equal-by-id destination (org-roam-node-at-point)))
+                             (point-marker)))))
+             (with-current-buffer (find-file-noselect (org-roam-node-file source))
+               (save-excursion
+                 (goto-char (org-roam-node-point source))
+                 (cl-assert (org-englearn--org-roam-node-equal-by-id source (org-roam-node-at-point)))
+                 (cl-assert (string-equal (org-roam-node-title source) (nth 4 (org-heading-components))))
+                 (org-cut-subtree)))
+             (with-current-buffer (marker-buffer marker)
+               (goto-char marker)
                (cl-assert (org-englearn--org-roam-node-equal-by-id destination (org-roam-node-at-point)))
-               (mapc #'org-roam-alias-add aliases)))))
+               (cl-assert (string-equal (org-roam-node-title destination) (nth 4 (org-heading-components))))
+               (mapc #'org-englearn-org-roam--alias-add aliases)))))
 
 ;;;###autoload
 (defun org-englearn-org-roam-alias-add ()
@@ -328,10 +343,12 @@
                  (org-roam-node-at-point))
                 (t (org-roam-node-read))))
          (alias (read-string (format "Alias to \"%s\": " (org-roam-node-title node)))))
+    (cl-assert (null (org-roam-node-from-title-or-alias alias)))
     (with-current-buffer (find-file-noselect (org-roam-node-file node))
       (save-excursion
         (goto-char (org-roam-node-point node))
         (cl-assert (org-englearn--org-roam-node-equal-by-id node (org-roam-node-at-point)))
-        (org-roam-alias-add alias)))))
+        (org-englearn-org-roam--alias-add alias)))))
 
 (provide 'org-englearn)
+;;; org-englearn.el ends here
