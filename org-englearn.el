@@ -17,8 +17,8 @@
 (defcustom org-englearn-file-inbox (expand-file-name "org-capture/english.org" org-directory)
   "Path to the file as a inbox of English vocabulary and difficult sentences.")
 
-(defcustom org-englearn-file-words (expand-file-name "org-roam/english-learning/words.org" org-directory)
-  "Path to the file for English words or phrases.")
+(defcustom org-englearn-file-vocabularies (expand-file-name "org-roam/english-learning/vocabularies.org" org-directory)
+  "Path to the file for English vocabularies.")
 
 (defcustom org-englearn-translation-engines (make-instance 'gt-youdao-dict-engine)
   "The translation engines used by `go-translate'.")
@@ -229,15 +229,16 @@
                                   (org-element-at-point)))
      (org-narrow-to-element)
      (org-fold-show-subtree)
-     (cl-ecase (car (read-multiple-choice "Which category does it belong to?"
-                                          '((?w "words")
-                                            (?c "complex sentence"))))
-       (?w (with-current-buffer
+     (cl-ecase (cl-first (read-multiple-choice
+                          "Which category does it belong to?"
+                          '((?v "vocabulary")
+                            (?e "expression"))))
+       (?v (with-current-buffer
                (prog1 (find-file-noselect
-                       (if-let* ((word (nth 4 (org-heading-components)))
-                                 (node (org-roam-node-from-title-or-alias word)))
+                       (if-let* ((title (cl-fifth (org-heading-components)))
+                                 (node (org-roam-node-from-title-or-alias title)))
                            (org-roam-node-file node)
-                         org-englearn-file-words))
+                         org-englearn-file-vocabularies))
                  (org-cut-subtree))
              (goto-char (point-max))
              (yank)
@@ -245,11 +246,11 @@
      (widen))))
 
 (defun org-englearn-process-new-heading ()
-  (let ((words (org-map-entries (lambda () (nth 4 (org-heading-components)))))
-        (word (nth 4 (org-heading-components)))
-        item-title
-        item)
-    (when (cl-find word words :test #'string-equal-ignore-case)
+  (let ((titles (org-map-entries (lambda () (cl-fifth (org-heading-components)))))
+        (title (cl-fifth (org-heading-components)))
+        (item-title nil)
+        (item nil))
+    (when (cl-find title titles :test #'string-equal-ignore-case)
       (org-back-to-heading)
       (re-search-forward (rx line-start (* space) "- "))
       (save-excursion
@@ -262,7 +263,7 @@
       (deactivate-mark)
       (org-cut-subtree)
       (condition-case nil
-          (progn (re-search-backward (rx "* " (literal word) (* space) line-end))
+          (progn (re-search-backward (rx "* " (literal title) (* space) line-end))
                  (save-restriction
                    (org-narrow-to-subtree)
                    (condition-case nil
@@ -323,12 +324,12 @@
                (save-excursion
                  (goto-char (org-roam-node-point source))
                  (cl-assert (org-englearn--org-roam-node-equal-by-id source (org-roam-node-at-point)))
-                 (cl-assert (string-equal (org-roam-node-title source) (nth 4 (org-heading-components))))
+                 (cl-assert (string-equal (org-roam-node-title source) (cl-fifth (org-heading-components))))
                  (org-cut-subtree)))
              (with-current-buffer (marker-buffer marker)
                (goto-char marker)
                (cl-assert (org-englearn--org-roam-node-equal-by-id destination (org-roam-node-at-point)))
-               (cl-assert (string-equal (org-roam-node-title destination) (nth 4 (org-heading-components))))
+               (cl-assert (string-equal (org-roam-node-title destination) (cl-fifth (org-heading-components))))
                (mapc #'org-englearn-org-roam--alias-add aliases)))))
 
 ;;;###autoload
