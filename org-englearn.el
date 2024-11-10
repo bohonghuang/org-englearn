@@ -20,6 +20,9 @@
 (defcustom org-englearn-file-vocabularies (expand-file-name "org-roam/english-learning/vocabularies.org" org-directory)
   "Path to the file for English vocabularies.")
 
+(defcustom org-englearn-file-expressions (expand-file-name "org-roam/english-learning/expressions.org" org-directory)
+  "Path to the file for English expressions.")
+
 (defcustom org-englearn-translation-engines (make-instance 'gt-youdao-dict-engine)
   "The translation engines used by `go-translate'.")
 
@@ -90,7 +93,7 @@
 
 (defun org-englearn-move-capture-timestamp ()
   (org-back-to-heading)
-  (forward-line)
+  (forward-line 1)
   (let ((beg (point))
         timestamp)
     (end-of-line)
@@ -126,7 +129,7 @@
     (remove-hook 'org-capture-after-finalize-hook #'org-englearn-capture-heading-by-id-hook t)
     (kill-local-variable 'org-roam-capture-templates)))
 
-(defun org-englearn-capture-process-buffer (text context)
+(defun org-englearn-capture-process-vocabulary-buffer (text context)
   (search-forward text)
   (set-mark (- (point) (length text)))
   (org-englearn-translate-to-kill-ring context)
@@ -137,7 +140,7 @@
   (forward-line -2)
   (end-of-line)
   (insert " \\\\")
-  (forward-line)
+  (forward-line 1)
   (beginning-of-line)
   (open-line 1)
   (indent-for-tab-command)
@@ -147,7 +150,7 @@
   (indent-for-tab-command)
   (insert "- ")
   (let ((beg (point)))
-    (forward-line)
+    (forward-line 1)
     (beginning-of-line)
     (delete-char 1)
     (insert "-")
@@ -166,6 +169,27 @@
        (insert "的"))
       (x (insert x " ")))))
 
+(defun org-englearn-capture-process-expression-buffer (text)
+  (org-englearn-move-capture-timestamp)
+  (org-back-to-heading)
+  (delete-blank-lines)
+  (search-forward text)
+  (beginning-of-line)
+  (delete-horizontal-space)
+  (insert "- " )
+  (org-englearn-translate-to-kill-ring text)
+  (let ((title (read-string "Title: ")))
+    (end-of-line)
+    (insert " \\\\")
+    (forward-line 1)
+    (beginning-of-line)
+    (open-line 1)
+    (indent-for-tab-command)
+    (yank)
+    (org-back-to-heading)
+    (end-of-line)
+    (insert title)))
+
 ;;;###autoload
 (defun org-englearn-capture-process-region (&optional beg end)
   (interactive)
@@ -182,7 +206,7 @@
                 (forward-sentence)
                 (point)))
          (sentence (buffer-substring-no-properties beg end)))
-    (org-englearn-capture-process-buffer cap sentence)))
+    (org-englearn-capture-process-vocabulary-buffer cap sentence)))
 
 (defun org-englearn-capture-heading-by-id-hook ()
   (when-let* ((roam-capture (org-roam-capture-p))
@@ -194,7 +218,7 @@
       (org-roam-capture--put :id (org-id-get-create)))))
 
 (cl-pushnew
- `("e" "English Vocabulary" entry (file ,org-englearn-file-inbox) "* %?\n%U\n\n  %i\n  %a" :kill-buffer t)
+ `("E" "English Vocabulary" entry (file ,org-englearn-file-inbox) "* %?\n%U\n\n  %i\n  %a" :kill-buffer t)
  org-capture-templates :test #'string= :key #'car)
 
 ;;;###autoload
@@ -203,8 +227,10 @@
   (let* ((beg (or beg (if (region-active-p) (region-beginning) (mark))))
          (end (or end (if (region-active-p) (region-end) (point))))
          (cap (org-englearn-remove-redundant-delimiters-in-string (buffer-substring-no-properties beg end))))
-    (if (string-match-p (rx ".") cap)
-        (org-capture-string cap "e")
+    (if (string-match-p (rx (or ?? ?. ?!) (optional ?\") (* space) line-end) cap)
+        (progn
+          (org-capture-string cap "E")
+          (org-englearn-capture-process-expression-buffer cap))
       (let* ((beg (save-excursion
                     (unless (> (point) (mark)) (exchange-point-and-mark))
                     (backward-sentence)
@@ -215,8 +241,8 @@
                     (point)))
              (sentence (org-englearn-remove-redundant-delimiters-in-string (buffer-substring-no-properties beg end))))
         (deactivate-mark)
-        (org-capture-string sentence "e")
-        (org-englearn-capture-process-buffer cap sentence)))))
+        (org-capture-string sentence "E")
+        (org-englearn-capture-process-vocabulary-buffer cap sentence)))))
 
 ;;;###autoload
 (defun org-englearn-process-inbox ()
@@ -233,16 +259,33 @@
                           "Which category does it belong to?"
                           '((?v "vocabulary")
                             (?e "expression"))))
-       (?v (with-current-buffer
-               (prog1 (find-file-noselect
-                       (if-let* ((title (cl-fifth (org-heading-components)))
-                                 (node (org-roam-node-from-title-or-alias title)))
-                           (org-roam-node-file node)
-                         org-englearn-file-vocabularies))
-                 (org-cut-subtree))
-             (goto-char (point-max))
-             (yank)
-             (org-englearn-process-new-heading))))
+       (?v
+        (save-excursion
+          (org-back-to-heading)
+          (forward-line 1)
+          (cl-assert (org-list-has-child-p (line-beginning-position) (org-list-struct))))
+        (with-current-buffer
+            (prog1 (find-file-noselect
+                    (if-let* ((title (cl-fifth (org-heading-components)))
+                              (node (org-roam-node-from-title-or-alias title)))
+                        (org-roam-node-file node)
+                      org-englearn-file-vocabularies))
+              (org-cut-subtree))
+          (goto-char (point-max))
+          (yank)
+          (org-englearn-process-new-heading)
+          (org-id-get-create)))
+       (?e
+        (save-excursion
+          (org-back-to-heading)
+          (forward-line 1)
+          (cl-assert (not (org-list-has-child-p (line-beginning-position) (org-list-struct)))))
+        (with-current-buffer
+            (prog1 (find-file-noselect org-englearn-file-expressions)
+              (org-cut-subtree))
+          (goto-char (point-max))
+          (yank)
+          (org-englearn-process-new-heading))))
      (widen))))
 
 (defun org-englearn-process-new-heading ()
@@ -263,28 +306,30 @@
       (deactivate-mark)
       (org-cut-subtree)
       (condition-case nil
-          (progn (re-search-backward (rx "* " (literal title) (* space) line-end))
-                 (save-restriction
-                   (org-narrow-to-subtree)
-                   (condition-case nil
-                       (progn                              ; try
-                         (re-search-forward (rx line-start (* space) "- " (literal item-title)))
-                         (widen)
-                         (org-end-of-item)
-                         (let ((insert-point (point)))
-                           (insert item)
-                           (goto-char insert-point)
-                           (forward-line)
-                           (beginning-of-line)
-                           (delete-region insert-point (point))))
-                     (error                                ; catch
-                      (re-search-forward (rx line-start (* space) "- "))
-                      (widen)
-                      (org-end-of-item-list)
-                      (insert item)))))
-        (error
-         (yank)
-         (org-id-get-create))))))
+          (progn
+            (re-search-backward (rx "* " (literal title) (* space) line-end))
+            (save-restriction
+              (org-narrow-to-subtree)
+              (condition-case nil
+                  (progn
+                    (re-search-forward (rx line-start (* space) "- " (literal item-title)))
+                    (cl-assert (org-list-has-child-p (line-beginning-position) (org-list-struct)))
+                    (widen)
+                    (org-end-of-item)
+                    (let ((insert-point (point)))
+                      (insert item)
+                      (goto-char insert-point)
+                      (forward-line 1)
+                      (beginning-of-line)
+                      (delete-region insert-point (point))))
+                (search-failed
+                 (re-search-forward (rx line-start (* space) "- "))
+                 (widen)
+                 (org-end-of-item-list)
+                 (insert item)))))
+        (search-failed
+         (goto-char (point-max))
+         (yank))))))
 
 (defun org-englearn--org-roam-node-equal-by-id (a b)
   (string-equal (org-roam-node-id a) (org-roam-node-id b)))

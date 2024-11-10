@@ -1,3 +1,5 @@
+;; -*- lexical-binding: t; -*-
+
 (require 'org-englearn)
 (require 'pdf-view)
 
