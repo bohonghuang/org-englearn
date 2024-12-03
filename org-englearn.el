@@ -12,19 +12,29 @@
 (require 'org-roam)
 
 (defcustom org-englearn-file-meanings (expand-file-name "org-roam/english-learning/meanings.org" org-directory)
-  "Path to the file for English meanings.")
+  "Path to the file for English meanings."
+  :group 'org-englearn
+  :type 'file)
 
 (defcustom org-englearn-file-inbox (expand-file-name "org-capture/english.org" org-directory)
-  "Path to the file as a inbox of English vocabulary and difficult sentences.")
+  "Path to the file as a inbox of English vocabulary and difficult sentences."
+  :group 'org-englearn
+  :type 'file)
 
 (defcustom org-englearn-file-vocabularies (expand-file-name "org-roam/english-learning/vocabularies.org" org-directory)
-  "Path to the file for English vocabularies.")
+  "Path to the file for English vocabularies."
+  :group 'org-englearn
+  :type 'file)
 
 (defcustom org-englearn-file-expressions (expand-file-name "org-roam/english-learning/expressions.org" org-directory)
-  "Path to the file for English expressions.")
+  "Path to the file for English expressions."
+  :group 'org-englearn
+  :type 'file)
 
 (defcustom org-englearn-translation-engines (make-instance 'gt-youdao-dict-engine)
-  "The translation engines used by `go-translate'.")
+  "The translation engines used by `go-translate'."
+  :group 'org-englearn
+  :type 'sexp)
 
 (defun org-englearn-trim-string (string)
   (replace-regexp-in-string "\\(^[[:space:]\n]*\\|[[:space:]\n]*$\\)" "" string))
@@ -221,13 +231,15 @@
  `("E" "English Vocabulary" entry (file ,org-englearn-file-inbox) "* %?\n%U\n\n  %i\n  %a" :kill-buffer t)
  org-capture-templates :test #'string= :key #'car)
 
+(defconst org-englearn-capture-sentence-regexp (rx (or ?? ?. ?!) (optional ?\") (* space) line-end))
+
 ;;;###autoload
 (defun org-englearn-capture (&optional beg end)
   (interactive)
   (let* ((beg (or beg (if (region-active-p) (region-beginning) (mark))))
          (end (or end (if (region-active-p) (region-end) (point))))
          (cap (org-englearn-remove-redundant-delimiters-in-string (buffer-substring-no-properties beg end))))
-    (if (string-match-p (rx (or ?? ?. ?!) (optional ?\") (* space) line-end) cap)
+    (if (string-match-p org-englearn-capture-sentence-regexp cap)
         (progn
           (org-capture-string cap "E")
           (org-englearn-capture-process-expression-buffer cap))
