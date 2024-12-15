@@ -36,9 +36,6 @@
   :group 'org-englearn
   :type 'sexp)
 
-(defun org-englearn-trim-string (string)
-  (replace-regexp-in-string "\\(^[[:space:]\n]*\\|[[:space:]\n]*$\\)" "" string))
-
 (defun org-englearn-fill-heading ()
   (if (region-active-p)
       (atomic-change-group
@@ -116,7 +113,9 @@
     (insert " " timestamp)))
 
 (defun org-englearn-remove-redundant-delimiters-in-string (string)
-  (replace-regexp-in-string "[[:space:]\n]+" " " string))
+  (replace-regexp-in-string
+   (rx (group alpha) "- " (group alpha)) "\\1\\2"
+   (replace-regexp-in-string (rx (+ (char space cntrl))) " " string)))
 
 (defun org-englearn-translate-to-kill-ring (text)
   (gt-start
@@ -311,7 +310,7 @@
       (save-excursion
         (let ((beg (point)))
           (end-of-line)
-          (setq item-title (org-englearn-trim-string (buffer-substring-no-properties beg (point))))))
+          (setq item-title (org-englearn-remove-redundant-delimiters-in-string (buffer-substring-no-properties beg (point))))))
       (backward-char 2)
       (org-mark-element)
       (setq item (buffer-substring-no-properties (mark) (point)))
