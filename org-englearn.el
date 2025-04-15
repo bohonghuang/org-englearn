@@ -199,23 +199,28 @@
     (end-of-line)
     (insert title)))
 
+(cl-defun org-englearn-capture-vocabulary-at-point
+    (&optional
+     (beg (if (region-active-p) (region-beginning) (mark)))
+     (end (if (region-active-p) (region-end) (point))))
+  (save-excursion
+    (goto-char beg)
+    (let* ((cap (buffer-substring-no-properties beg end))
+           (beg (save-excursion
+                  (unless (> (point) (mark)) (exchange-point-and-mark))
+                  (backward-sentence)
+                  (point)))
+           (end (save-excursion
+                  (unless (< (point) (mark)) (exchange-point-and-mark))
+                  (forward-sentence)
+                  (point)))
+           (sentence (buffer-substring-no-properties beg end)))
+      (cl-values cap sentence))))
+
 ;;;###autoload
 (defun org-englearn-capture-process-region (&optional beg end)
   (interactive)
-  (let* ((beg (or beg (if (region-active-p) (region-beginning) (mark))))
-         (end (or end (if (region-active-p) (region-end) (point))))
-         (_ (goto-char beg))
-         (cap (buffer-substring-no-properties beg end))
-         (beg (save-excursion
-                (unless (> (point) (mark)) (exchange-point-and-mark))
-                (backward-sentence)
-                (point)))
-         (end (save-excursion
-                (unless (< (point) (mark)) (exchange-point-and-mark))
-                (forward-sentence)
-                (point)))
-         (sentence (buffer-substring-no-properties beg end)))
-    (org-englearn-capture-process-vocabulary-buffer cap sentence)))
+  (cl-multiple-value-call #'org-englearn-capture-process-vocabulary-buffer (org-englearn-capture-vocabulary-at-point)))
 
 (defun org-englearn-capture-heading-by-id-hook ()
   (when-let* ((roam-capture (org-roam-capture-p))
