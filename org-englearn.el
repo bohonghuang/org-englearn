@@ -6,7 +6,7 @@
 (require 'cl-lib)
 (require 'rx)
 (require 'hydra)
-(require 'go-translate)
+(require 'gt)
 (require 'org)
 (require 'org-capture)
 (require 'org-roam)
@@ -218,7 +218,7 @@
       (cl-values cap sentence))))
 
 ;;;###autoload
-(defun org-englearn-capture-process-region (&optional beg end)
+(defun org-englearn-capture-process-region ()
   (interactive)
   (cl-multiple-value-call #'org-englearn-capture-process-vocabulary-buffer (org-englearn-capture-vocabulary-at-point)))
 
